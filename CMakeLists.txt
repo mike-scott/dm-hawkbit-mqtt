@@ -44,3 +44,5 @@ target_sources(app PRIVATE src/app_work_queue.c)
 target_sources(app PRIVATE src/mqtt_temperature.c)
 target_sources_ifdef(CONFIG_BT               app PRIVATE src/bluetooth.c)
 target_sources_ifdef(CONFIG_SYS_LOG_EXT_HOOK app PRIVATE src/tstamp_log.c)
+target_sources_ifdef(CONFIG_FOTA_SYSLOG_SHELL
+		     app PRIVATE src/system_log_shell.c)
