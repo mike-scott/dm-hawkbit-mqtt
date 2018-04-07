@@ -1,0 +1,7 @@
+&flash0 {
+	partitions {
+		partition@de000 {
+			reg = <0x000de000 0x0001b000>;
+		};
+	};
+};

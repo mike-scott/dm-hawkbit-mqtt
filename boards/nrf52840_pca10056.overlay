@@ -1,5 +1,14 @@
 &flash0 {
 	partitions {
+		partition@de000 {
+			reg = <0x000de000 0x0001b000>;
+		};
+
+		syslog_partition: partition@f9000 {
+			label = "syslog";
+			reg = <0x000f9000 0x00004000>;
+		};
+
 		app_state_partition: partition@fd000 {
 			label = "application-state";
 			reg = <0x000FD000 0x00003000>;
