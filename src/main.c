@@ -50,6 +50,7 @@ void main(void)
 	}
 	_TC_END_RESULT(TC_PASS, "mqtt_init");
 
+#ifndef CONFIG_FOTA_SIMULATOR
 	TC_PRINT("Blinking LED\n");
 	if (blink_led_start()) {
 		_TC_END_RESULT(TC_FAIL, "blink_led");
@@ -57,6 +58,7 @@ void main(void)
 		return;
 	}
 	_TC_END_RESULT(TC_PASS, "blink_led");
+#endif
 
 	TC_END_REPORT(TC_PASS);
 

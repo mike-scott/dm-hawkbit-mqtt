@@ -16,10 +16,12 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <misc/byteorder.h>
-#include <flash.h>
 #include <zephyr.h>
+#ifndef CONFIG_FOTA_SIMULATOR
+#include <flash.h>
 #include <dfu/mcuboot.h>
 #include <dfu/flash_img.h>
+#endif
 #include <misc/reboot.h>
 #include <net/http.h>
 #include <net/net_app.h>
@@ -101,10 +103,12 @@ struct hawkbit_context {
 	struct k_sem *sem;
 };
 
+#ifndef CONFIG_FOTA_SIMULATOR
 struct hawkbit_device_acid {
 	u32_t current;
 	u32_t update;
 };
+#endif
 
 struct json_data_t {
 	char *data;
@@ -154,10 +158,15 @@ static struct net_buf_pool *data_pool(void)
 #define data_pool NULL
 #endif /* CONFIG_NET_CONTEXT_NET_PKT_POOL */
 
+/* setup a 2MB bank size for simulated flash */
+#ifdef CONFIG_FOTA_SIMULATOR
+#define FLASH_BANK_SIZE (1024 * 1024 * 2)
+#else
 static struct device *flash_dev;
 static struct flash_img_context dfu_ctx;
 
 #define FLASH_BANK_SIZE FLASH_AREA_IMAGE_1_SIZE
+#endif
 
 /*
  * Descriptors for mapping between JSON and structure representations.
@@ -419,6 +428,7 @@ static const char *hawkbit_status_execution(enum hawkbit_status_exec e)
 	}
 }
 
+#ifndef CONFIG_FOTA_SIMULATOR
 static void hawkbit_device_acid_read(struct hawkbit_device_acid *device_acid)
 {
 	flash_read(flash_dev, FLASH_AREA_APPLICATION_STATE_OFFSET, device_acid,
@@ -537,6 +547,7 @@ static int hawkbit_init_flash(void)
 	}
 	return ret;
 }
+#endif
 
 /* http_client doesn't callback until the HTTP body has started */
 static void install_update_cb(struct http_ctx *ctx,
@@ -546,7 +557,10 @@ static void install_update_cb(struct http_ctx *ctx,
 			      void *user_data)
 {
 	struct hawkbit_context *hbc = user_data;
-	int downloaded, ret = 0;
+	int downloaded;
+#ifndef CONFIG_FOTA_SIMULATOR
+	int ret = 0;
+#endif
 	u8_t *body_data = NULL;
 	size_t body_len = 0;
 
@@ -575,6 +589,9 @@ static void install_update_cb(struct http_ctx *ctx,
 		body_len = data_len;
 	}
 
+#ifdef CONFIG_FOTA_SIMULATOR
+	hbc->dl.downloaded_size += body_len;
+#else
 	/* everything looks good: flash */
 	ret = flash_img_buffered_write(&dfu_ctx,
 				       body_data, body_len,
@@ -584,6 +601,7 @@ static void install_update_cb(struct http_ctx *ctx,
 		goto error;
 	}
 	hbc->dl.downloaded_size = flash_img_bytes_written(&dfu_ctx);
+#endif
 
 	downloaded = hbc->dl.downloaded_size * 100 /
 		     hbc->dl.http_content_size;
@@ -616,6 +634,7 @@ static int hawkbit_install_update(struct hawkbit_context *hbc,
 		return -EINVAL;
 	}
 
+#ifndef CONFIG_FOTA_SIMULATOR
 	flash_write_protection_set(flash_dev, false);
 	ret = flash_erase(flash_dev, FLASH_AREA_IMAGE_1_OFFSET,
 			  FLASH_BANK_SIZE);
@@ -625,6 +644,7 @@ static int hawkbit_install_update(struct hawkbit_context *hbc,
 			    FLASH_AREA_IMAGE_1_OFFSET, FLASH_BANK_SIZE);
 		return -EIO;
 	}
+#endif
 
 	SYS_LOG_INF("Starting the download and flash process");
 
@@ -633,8 +653,10 @@ static int hawkbit_install_update(struct hawkbit_context *hbc,
 	memset(&hbc->dl, 0, sizeof(struct hawkbit_download));
 	/* reset download semaphore -- TODO is this really needed? */
 	k_sem_init(hbc->sem, 0, 1);
+#ifndef CONFIG_FOTA_SIMULATOR
 	/* Re-initialize the flash writer state. */
 	flash_img_init(&dfu_ctx, flash_dev);
+#endif
 
 	ret = http_client_init(&hbc->http_ctx,
 			       HAWKBIT_SERVER_ADDR, HAWKBIT_PORT,
@@ -896,7 +918,7 @@ static int hawkbit_parse_deployment(struct hawkbit_dep_res *res,
 	*json_acid = acid;
 	num_chunks = res->deployment.num_chunks;
 	if (num_chunks != 1) {
-		SYS_LOG_ERR("expecting one chunk (got %d)", num_chunks);
+		SYS_LOG_ERR("expecting one chunk (got %zu)", num_chunks);
 		return -ENOSPC;
 	}
 	chunk = &res->deployment.chunks[0];
@@ -906,7 +928,7 @@ static int hawkbit_parse_deployment(struct hawkbit_dep_res *res,
 	}
 	num_artifacts = chunk->num_artifacts;
 	if (num_artifacts != 1) {
-		SYS_LOG_ERR("expecting one artifact (got %d)", num_artifacts);
+		SYS_LOG_ERR("expecting one artifact (got %zu)", num_artifacts);
 		return -EINVAL;
 	}
 	artifact = &chunk->artifacts[0];
@@ -1023,7 +1045,9 @@ static int hawkbit_ddi_poll(struct hawkbit_context *hbc)
 	/*
 	 * Etc.
 	 */
+#ifndef CONFIG_FOTA_SIMULATOR
 	struct hawkbit_device_acid device_acid;
+#endif
 	struct json_data_t json = { NULL, 0 };
 	const struct product_id_t *product_id = product_id_get();
 	int ret;
@@ -1155,6 +1179,7 @@ static int hawkbit_ddi_poll(struct hawkbit_context *hbc)
 	SYS_LOG_DBG("artifact address: %s", download_http);
 	SYS_LOG_DBG("artifact file size: %d", file_size);
 
+#ifndef CONFIG_FOTA_SIMULATOR
 	hawkbit_device_acid_read(&device_acid);
 	if (device_acid.current == json_acid) {
 		/* We are coming from a successful flash, update the server */
@@ -1173,6 +1198,7 @@ static int hawkbit_ddi_poll(struct hawkbit_context *hbc)
 		ret = -EALREADY;
 		goto report_error;
 	}
+#endif
 
 	/* Here we should have everything we need to apply the action */
 	SYS_LOG_INF("Valid action ID %d found, proceeding with the update",
@@ -1191,17 +1217,27 @@ static int hawkbit_ddi_poll(struct hawkbit_context *hbc)
 	}
 
 	SYS_LOG_INF("Triggering OTA update.");
+#ifndef CONFIG_FOTA_SIMULATOR
 	boot_request_upgrade(false);
 	ret = hawkbit_device_acid_update(HAWKBIT_ACID_UPDATE, json_acid);
 	if (ret != 0) {
 		SYS_LOG_ERR("Failed to update ACID: %d", ret);
 		goto report_error;
 	}
+#endif
 	SYS_LOG_INF("Image id %d flashed successfuly, rebooting now",
 					json_acid);
 
+#ifdef CONFIG_FOTA_SIMULATOR
+	/* post back fake "success" action */
+	ret = hawkbit_report_dep_fbk(hbc, json_acid,
+				     HAWKBIT_STATUS_FINISHED_SUCCESS,
+				     HAWKBIT_STATUS_EXEC_CLOSED);
+	return ret;
+#else
 	/* Reboot and let the bootloader take care of the swap process */
 	sys_reboot(0);
+#endif
 
 	return 0;
 
@@ -1248,12 +1284,14 @@ int hawkbit_start(struct k_work_q *work_q)
 	struct net_if *iface = net_if_get_default();
 	int ret;
 
+#ifndef CONFIG_FOTA_SIMULATOR
 	ret = hawkbit_init_flash();
 	if (ret) {
 		SYS_LOG_ERR("Hawkbit Client initialization generated "
 			    "an error: %d", ret);
 		return ret;
 	}
+#endif
 
 	k_sem_init(&hb_sem, 0, 1);
 	memset(&hb_context, 0, sizeof(hb_context));

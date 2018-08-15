@@ -24,6 +24,10 @@
 #elif defined(CONFIG_SOC_SERIES_KINETIS_K6X)
 #define DEVICE_ID_BASE		(&SIM->UIDH)
 #define DEVICE_ID_LENGTH	4
+#elif defined(CONFIG_BOARD_QEMU_X86)
+static u16_t qemu_device_id = 0x1;
+#define DEVICE_ID_BASE		(&qemu_device_id)
+#define DEVICE_ID_LENGTH	2
 #endif
 
 static struct product_id_t product_id = {

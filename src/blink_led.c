@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef CONFIG_FOTA_SIMULATOR
 #define SYS_LOG_DOMAIN "fota/led"
 #define SYS_LOG_LEVEL SYS_LOG_LEVEL_INFO
 #include <logging/sys_log.h>
@@ -54,3 +55,4 @@ int blink_led_start(void)
 
 	return 0;
 }
+#endif
